@@ -5,6 +5,12 @@ Newest first. This recipe targets one DGX Spark. The image is `tensorfold-nemotr
 
 ## Unreleased
 
+Checkpoint tensors go to the GPU through a 64 MiB pinned staging buffer (`engine/bolt_upload.h`) instead of straight
+from the mmap'd shards. A tensor starts after a header of any length, so its address is almost never aligned, and on an
+RTX Spark N1X laptop (driver 615.78.08) the driver copies such pageable sources slowly: the load took 1,654 s, and takes
+45.5 s through the buffer. The same 22.4 GiB copied from 2 MiB-aligned mmap addresses takes 2.1 s; offset by 8, 13 or
+4096 bytes it does not reach 2.9 GiB in 120 s.
+
 The Bolt backend serves the checkpoint. Measured on one GB10 (this build, 2026-10-27): decode alone 74 tok/s greedy prose
 and 137 code with LiLiCorr (72 and 136 sampled; 4.3 to 36 without drafts), prefill 2,375 to 2,525 tok/s from 2.6k to
 42k tokens, 2,250 at 63k and 1,970 at 126k (NV4_FP4=0: about 7 % less); sixteen streams on one prompt 330 tok/s
