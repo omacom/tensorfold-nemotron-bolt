@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <chrono>
 #include "bolt_port.h"
+#include "bolt_upload.h"
 
 #define CK(x) do { cudaError_t _e = (x); if (_e != cudaSuccess) { fprintf(stderr, "bolt: %s:%d %s: %s\n", __FILE__, __LINE__, #x, cudaGetErrorString(_e)); } } while (0)
 
@@ -191,7 +192,7 @@ float* dev_f32(Store* s, const std::string& name) {
 void* dev_copy(const void* src, size_t n) {
     void* d = nullptr;
     CK(cudaMalloc(&d, n));
-    CK(cudaMemcpy(d, src, n, cudaMemcpyHostToDevice));
+    CK(bolt_upload(d, src, n));
     return d;
 }
 
@@ -318,7 +319,7 @@ bool load_slab(Store* s, const std::string& layer_prefix, const char* proj, int 
             fprintf(stderr, "bolt: expert tensor %s missing or the wrong size\n", name.c_str());
             return false;
         }
-        CK(cudaMemcpy(raw + e * raw_per, data, raw_per, cudaMemcpyHostToDevice));
+        CK(bolt_upload(raw + e * raw_per, data, raw_per));
     }
     repack_iq2(0, raw, qs, d, (size_t)rows * experts, k);
     CK(cudaDeviceSynchronize());
@@ -336,7 +337,7 @@ bool load_slab_one(Store* s, const std::string& name, IQ2Slab& slab) {
     CK(cudaMalloc(&raw, w.len));
     CK(cudaMalloc(&qs, (size_t)rows * nb * 64));
     CK(cudaMalloc(&d, (size_t)rows * nb * 2));
-    CK(cudaMemcpy(raw, data, w.len, cudaMemcpyHostToDevice));
+    CK(bolt_upload(raw, data, w.len));
     repack_iq2(0, raw, qs, d, (size_t)rows, k);
     CK(cudaDeviceSynchronize());
     cudaFree(raw);

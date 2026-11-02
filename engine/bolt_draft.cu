@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <vector>
 #include "bolt_port.h"
+#include "bolt_upload.h"
 
 #define CK(x) do { cudaError_t _e = (x); if (_e != cudaSuccess) { fprintf(stderr, "bolt draft: %s:%d %s: %s\n", __FILE__, __LINE__, #x, cudaGetErrorString(_e)); } } while (0)
 
@@ -99,7 +100,7 @@ float bf2f(uint16_t v) { uint32_t u = (uint32_t)v << 16; float f; memcpy(&f, &u,
 void* up_raw(const uint8_t* data, size_t n) {
     void* d = nullptr;
     CK(cudaMalloc(&d, n));
-    CK(cudaMemcpy(d, data, n, cudaMemcpyHostToDevice));
+    CK(bolt_upload(d, data, n));
     return d;
 }
 
