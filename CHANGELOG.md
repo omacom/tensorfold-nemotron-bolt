@@ -7,6 +7,8 @@ Newest first. This recipe targets one DGX Spark. The image is `tensorfold-nemotr
 
 On a GPU that shares the host's memory (GB10, N1x), libbolt counts the host's reclaimable page cache as free when it grows a sequence's KV cache. `cudaMemGetInfo` counts that cache as used, and after a load it is mostly the checkpoint: on a 64 GB N1x laptop it reported 1.3 to 1.8 GiB free against the 3 GiB reserve while 15 GiB was available, so every request past 4,096 tokens failed with `Bolt's forward failed` ("no memory to grow sequence 0 past 4096 tokens"). The free memory Bolt logs at start is the same figure.
 
+Once the checkpoint is on the GPU, libbolt asks the kernel to drop the shards' cached pages, so a unified-memory machine does not hold the 22.4 GiB checkpoint twice; TensorFold's own CUDA loaders do the same since 1.2.1.
+
 Checkpoint tensors go to the GPU through a 64 MiB pinned staging buffer (`engine/bolt_upload.h`) instead of straight
 from the mmap'd shards. A tensor starts after a header of any length, so its address is almost never aligned, and on an
 RTX Spark N1X laptop (driver 615.78.08) the driver copies such pageable sources slowly: the load took 1,654 s, and takes

@@ -1129,6 +1129,14 @@ extern "C" Bolt* bolt_open(const char* dir, int context) {
     CK(cudaEventCreateWithFlags(&b->ev_j2, cudaEventDisableTiming));
     for (auto& m : store->maps) munmap(m.first, m.second);
     store->maps.clear();
+#ifdef __linux__
+    // The tensors are on the GPU now: let the kernel drop the shards' cached pages rather than hold the
+    // checkpoint twice in a machine whose GPU shares its memory, as TensorFold's own loaders do since 1.2.1.
+    for (auto& f : store->files) {
+        int fd = open((store->dir + "/" + f.first).c_str(), O_RDONLY);
+        if (fd >= 0) { posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED); close(fd); }
+    }
+#endif
     delete store;
 
     const char* ddir = getenv("BOLT_DRAFT");
