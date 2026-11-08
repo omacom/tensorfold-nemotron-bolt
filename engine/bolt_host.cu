@@ -535,6 +535,33 @@ void kv_unmap_granule(Bolt* b, int seq, int g, int nbufs) {
     }
 }
 
+// Memory free for Bolt to map. On a GPU that shares the host's memory (GB10, N1x) cudaMemGetInfo counts the page
+// cache as used, though the kernel hands it back on demand; after a load that is most of the checkpoint, so a 64 GB
+// machine reported under the KV reserve and refused to grow a sequence past 4096 tokens. There the host's
+// MemAvailable, which counts reclaimable cache, is free as well.
+size_t free_bytes() {
+    size_t fr = 0, tot = 0;
+    cudaMemGetInfo(&fr, &tot);
+#ifdef __linux__
+    static int integrated = -1;
+    if (integrated < 0) {
+        int dev = 0;
+        integrated = 0;
+        if (cudaGetDevice(&dev) != cudaSuccess || cudaDeviceGetAttribute(&integrated, cudaDevAttrIntegrated, dev) != cudaSuccess) integrated = 0;
+    }
+    if (integrated) {
+        if (FILE* f = fopen("/proc/meminfo", "r")) {
+            char line[128];
+            unsigned long long kb = 0;
+            while (fgets(line, sizeof line, f))
+                if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) { fr = std::max(fr, (size_t)(kb * 1024)); break; }
+            fclose(f);
+        }
+    }
+#endif
+    return fr;
+}
+
 // Map physical memory under the first `tokens` rows of the sequence. False when the driver or the free memory refuses.
 bool kv_ensure(Bolt* b, int seq, int tokens) {
     KvPool& k = b->kv;
@@ -549,8 +576,7 @@ bool kv_ensure(Bolt* b, int seq, int tokens) {
     acc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
     while (k.mapped[seq] < need) {
         const int g = k.mapped[seq];
-        size_t fr = 0, tot = 0;
-        cudaMemGetInfo(&fr, &tot);
+        const size_t fr = free_bytes();
         if (fr < k.reserve_free + (size_t)nbuf * k.gran) {
             fprintf(stderr, "bolt: no memory to grow sequence %d past %d tokens (%.1f GiB free)\n", seq, g * k.tokens_per_gran, fr / 1073741824.0);
             return false;
@@ -1109,8 +1135,7 @@ extern "C" Bolt* bolt_open(const char* dir, int context) {
     std::string dd = ddir ? ddir : "/root/.cache/huggingface/hub/models--nvidia--NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr/snapshots/4c6a5613b6d887194a3a5493e3a18a5b3930bb86";
     b->draft = getenv("BOLT_DRAFT_OFF") ? nullptr : draft_open(dd.c_str(), b->embed, b->head, b->nseq);
     CK(cudaDeviceSynchronize());
-    size_t fr = 0, tot = 0;
-    cudaMemGetInfo(&fr, &tot);
+    const size_t fr = free_bytes();
     fprintf(stderr, "bolt: weights resident, %d mamba %d moe %d attention, %d sequence%s of context %d (%s KV, %s SSM state), %.1f GiB free\n", mi, oi, ai, b->nseq, b->nseq == 1 ? "" : "s", b->context, b->kv_fp8 ? "fp8" : "bf16", b->ssm_lazy ? "one-slot lazy" : "two-slot", fr / 1073741824.0);
     if (b->kv.lazy && getenv("BOLT_KV_PIN") && atoi(getenv("BOLT_KV_PIN")) != 0) {
         // map every sequence's whole window now, so the memory is certain (a start that cannot have it fails here)
@@ -1122,8 +1147,7 @@ extern "C" Bolt* bolt_open(const char* dir, int context) {
         }
         CK(cudaStreamSynchronize(b->s0));
         b->kv_pin = true;
-        size_t fr2 = 0, tot2 = 0;
-        cudaMemGetInfo(&fr2, &tot2);
+        const size_t fr2 = free_bytes();
         fprintf(stderr, "bolt: KV cache pinned for %d x %d tokens, %.1f GiB free\n", b->nseq, b->context, fr2 / 1073741824.0);
     }
     if (!getenv("BOLT_NOCAL")) bolt_calibrate(b);
