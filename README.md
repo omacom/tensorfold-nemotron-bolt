@@ -1,3 +1,5 @@
+> **Archived.** This image is now built from [`images/tensorfold-nemotron-bolt`](https://github.com/omacom/omarchy-local-ai/tree/master/images/tensorfold-nemotron-bolt) in [omacom/omarchy-local-ai](https://github.com/omacom/omarchy-local-ai) and published as `ghcr.io/omacom/omarchy-local-ai/…`. Images already published from here stay available.
+
 <h1 align="center">NVIDIA Nemotron 3.5 Bolt // TensorFold // DGX Spark</h1>
 
 ```text
